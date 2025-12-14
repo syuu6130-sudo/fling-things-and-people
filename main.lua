@@ -1,13 +1,11 @@
 --[[
 ====================================================
- Syu Ultimate Complete Hub (JAPANESE FULL VER)
- Game Focus : Fling Things and People
- Author     : Modified by AI (Based on Syu)
- Ver        : 2.0 (Mobile & JP Support)
+ Syu Ultimate Complete Hub (Fix Ver)
+ 修正版: モバイル完全対応・強制適用モード搭載
 ====================================================
 ]]
 
--- ================= サービス =================
+-- サービス
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -16,21 +14,8 @@ local Workspace = game:GetService("Workspace")
 local Camera = workspace.CurrentCamera
 
 local LP = Players.LocalPlayer
-local Mouse = LP:GetMouse()
 
--- ================= キャラクター管理 =================
-local Character, Humanoid, HRP
-
-local function LoadChar()
-    Character = LP.Character or LP.CharacterAdded:Wait()
-    Humanoid = Character:WaitForChild("Humanoid")
-    HRP = Character:WaitForChild("HumanoidRootPart")
-end
-LoadChar()
-LP.CharacterAdded:Connect(LoadChar)
-
--- ================= UI ベース作成 =================
--- 多重起動防止
+-- UIの重複削除
 if CoreGui:FindFirstChild("Syu_CompleteHub") then
     CoreGui.Syu_CompleteHub:Destroy()
 end
@@ -38,37 +23,36 @@ end
 local GUI = Instance.new("ScreenGui")
 GUI.Name = "Syu_CompleteHub"
 GUI.ResetOnSpawn = false
--- セキュリティの低いExecutor対策（PlayerGuiに入れる）
-if pcall(function() GUI.Parent = CoreGui end) then
+
+-- Executorごとの親設定（エラー回避）
+pcall(function()
     GUI.Parent = CoreGui
-else
+end)
+if not GUI.Parent then
     GUI.Parent = LP:WaitForChild("PlayerGui")
 end
 
--- メインフレーム
+-- ================= UIデザイン =================
 local Main = Instance.new("Frame", GUI)
 Main.Name = "MainFrame"
-Main.Size = UDim2.new(0, 560, 0, 380)
-Main.Position = UDim2.new(0.5, -280, 0.5, -190)
-Main.BackgroundColor3 = Color3.fromRGB(18,18,18)
+Main.Size = UDim2.new(0, 500, 0, 350) -- 少しコンパクトに
+Main.Position = UDim2.new(0.5, -250, 0.5, -175)
+Main.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Main.BorderSizePixel = 0
 Main.Active = true
 Main.Visible = true
 
--- モバイル向けドラッグ機能 (Draggableプロパティは非推奨のためカスタム実装)
+Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 12)
+
+-- ドラッグ機能（モバイル対応）
 local dragging, dragInput, dragStart, startPos
-local function Update(input)
-    local delta = input.Position - dragStart
-    Main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-end
 Main.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         dragging = true
         dragStart = input.Position
         startPos = Main.Position
         input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
         end)
     end
 end)
@@ -79,335 +63,262 @@ Main.InputChanged:Connect(function(input)
 end)
 UserInputService.InputChanged:Connect(function(input)
     if input == dragInput and dragging then
-        Update(input)
+        local delta = input.Position - dragStart
+        Main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
     end
 end)
 
-Instance.new("UICorner", Main).CornerRadius = UDim.new(0,14)
-
--- ================= タイトルバー =================
+-- タイトルバー
 local Title = Instance.new("TextLabel", Main)
-Title.Size = UDim2.new(1,-40,0,40) -- ボタン分スペースを空ける
-Title.Position = UDim2.new(0,15,0,0)
-Title.Text = "Syu Hub | 完全版"
-Title.TextColor3 = Color3.new(1,1,1)
+Title.Size = UDim2.new(1, -50, 0, 40)
+Title.Position = UDim2.new(0, 15, 0, 0)
+Title.Text = "Syu Hub | 修正版 v2.1"
+Title.TextColor3 = Color3.fromRGB(240, 240, 240)
 Title.Font = Enum.Font.GothamBold
-Title.TextSize = 18
+Title.TextSize = 16
 Title.BackgroundTransparency = 1
 Title.XAlignment = Enum.TextXAlignment.Left
 
--- 最小化ボタン (UI内)
+-- 最小化ボタン
 local CloseBtn = Instance.new("TextButton", Main)
-CloseBtn.Size = UDim2.new(0,40,0,40)
-CloseBtn.Position = UDim2.new(1,-40,0,0)
+CloseBtn.Size = UDim2.new(0, 40, 0, 40)
+CloseBtn.Position = UDim2.new(1, -40, 0, 0)
 CloseBtn.Text = "-"
 CloseBtn.Font = Enum.Font.GothamBold
 CloseBtn.TextSize = 24
-CloseBtn.TextColor3 = Color3.fromRGB(200,200,200)
+CloseBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
 CloseBtn.BackgroundTransparency = 1
-CloseBtn.MouseButton1Click:Connect(function()
-    Main.Visible = false
-end)
+CloseBtn.MouseButton1Click:Connect(function() Main.Visible = false end)
 
--- ================= モバイル用トグルボタン =================
-local ToggleFrame = Instance.new("Frame", GUI)
-ToggleFrame.Size = UDim2.new(0, 50, 0, 50)
--- 画面右中央寄りに配置
-ToggleFrame.Position = UDim2.new(1, -70, 0.4, 0) 
-ToggleFrame.BackgroundColor3 = Color3.fromRGB(18,18,18)
-ToggleFrame.BackgroundTransparency = 0.2
-Instance.new("UICorner", ToggleFrame).CornerRadius = UDim.new(0,10)
-
-local ToggleBtn = Instance.new("TextButton", ToggleFrame)
-ToggleBtn.Size = UDim2.new(1,0,1,0)
-ToggleBtn.Text = "Syu"
+-- 開閉ボタン（画面右側）
+local ToggleBtn = Instance.new("TextButton", GUI)
+ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
+ToggleBtn.Position = UDim2.new(1, -60, 0.4, 0)
+ToggleBtn.Text = "Open"
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 ToggleBtn.TextColor3 = Color3.new(1,1,1)
-ToggleBtn.Font = Enum.Font.GothamBold
-ToggleBtn.TextSize = 14
-ToggleBtn.BackgroundTransparency = 1
-ToggleBtn.MouseButton1Click:Connect(function()
-    Main.Visible = not Main.Visible
-end)
+Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 10)
+ToggleBtn.MouseButton1Click:Connect(function() Main.Visible = not Main.Visible end)
 
--- ================= タブシステム =================
+-- ================= タブ機能 =================
+local TabButtons = Instance.new("ScrollingFrame", Main)
+TabButtons.Size = UDim2.new(0, 120, 1, -50)
+TabButtons.Position = UDim2.new(0, 10, 0, 45)
+TabButtons.BackgroundTransparency = 1
+TabButtons.ScrollBarThickness = 2
+
+local ContentArea = Instance.new("Frame", Main)
+ContentArea.Size = UDim2.new(1, -145, 1, -50)
+ContentArea.Position = UDim2.new(0, 140, 0, 45)
+ContentArea.BackgroundTransparency = 1
+
 local Tabs = {}
-local CurrentTab
+local CurrentTab = nil
 
-local TabBar = Instance.new("Frame", Main)
-TabBar.Size = UDim2.new(0,120,1,-40)
-TabBar.Position = UDim2.new(0,0,0,40)
-TabBar.BackgroundColor3 = Color3.fromRGB(25,25,25)
-Instance.new("UICorner", TabBar).CornerRadius = UDim.new(0,14)
-
-local function CreateTab(name, displayName, order)
-    local btn = Instance.new("TextButton", TabBar)
-    btn.Size = UDim2.new(1,-10,0,36)
-    btn.Position = UDim2.new(0,5,0,(order-1)*40 + 5)
-    btn.Text = displayName
+local function CreateTab(name)
+    -- タブボタン
+    local btn = Instance.new("TextButton", TabButtons)
+    btn.Size = UDim2.new(1, -5, 0, 35)
+    btn.Position = UDim2.new(0, 0, 0, (#Tabs * 40))
+    btn.Text = name
     btn.Font = Enum.Font.Gotham
-    btn.TextSize = 14
+    btn.TextSize = 13
     btn.TextColor3 = Color3.new(1,1,1)
-    btn.BackgroundColor3 = Color3.fromRGB(35,35,35)
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
-
-    local frame = Instance.new("ScrollingFrame", Main) -- ScrollingFrameに変更して要素が多くても大丈夫に
-    frame.Size = UDim2.new(1,-130,1,-50)
-    frame.Position = UDim2.new(0,125,0,45)
-    frame.BackgroundTransparency = 1
-    frame.Visible = false
-    frame.ScrollBarThickness = 4
-    frame.BorderSizePixel = 0
-
-    Tabs[name] = frame
-
+    btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    
+    -- 中身のページ
+    local page = Instance.new("ScrollingFrame", ContentArea)
+    page.Size = UDim2.new(1, 0, 1, 0)
+    page.BackgroundTransparency = 1
+    page.Visible = false
+    page.ScrollBarThickness = 4
+    
+    Tabs[#Tabs + 1] = {Button = btn, Page = page}
+    
     btn.MouseButton1Click:Connect(function()
-        if CurrentTab then CurrentTab.Visible = false end
-        CurrentTab = frame
-        frame.Visible = true
+        for _, tab in pairs(Tabs) do tab.Page.Visible = false end
+        page.Visible = true
     end)
+    
+    return page
 end
 
-CreateTab("Main", "メイン", 1)
-CreateTab("Player", "プレイヤー", 2)
-CreateTab("Fling", "フリング", 3)
-CreateTab("Visual", "表示 (ESP)", 4)
-CreateTab("Settings", "設定", 5)
+local MainTab = CreateTab("メイン")
+local PlayerTab = CreateTab("プレイヤー")
+local VisualTab = CreateTab("表示 (ESP)")
+local SettingsTab = CreateTab("設定")
 
-Tabs["Main"].Visible = true
-CurrentTab = Tabs["Main"]
+Tabs[1].Page.Visible = true -- 最初のタブを表示
 
--- ================= UI 要素作成関数 =================
-local function CreateButton(parent, text, order, callback)
-    local b = Instance.new("TextButton", parent)
-    b.Size = UDim2.new(0,380,0,36) -- 幅を調整
-    b.Position = UDim2.new(0,10,0,(order-1)*42)
-    b.Text = text
-    b.Font = Enum.Font.Gotham
-    b.TextSize = 14
-    b.TextColor3 = Color3.new(1,1,1)
-    b.BackgroundColor3 = Color3.fromRGB(40,40,40)
-    Instance.new("UICorner", b)
-    b.MouseButton1Click:Connect(callback)
-    return b
-end
+-- ================= 機能実装 =================
 
-local function CreateLabel(parent, text, order)
-    local l = Instance.new("TextLabel", parent)
-    l.Size = UDim2.new(0,380,0,20)
-    l.Position = UDim2.new(0,10,0,(order-1)*42)
-    l.Text = text
-    l.Font = Enum.Font.GothamBold
-    l.TextSize = 14
-    l.TextColor3 = Color3.fromRGB(255, 170, 0)
-    l.BackgroundTransparency = 1
-    l.XAlignment = Enum.TextXAlignment.Left
-    return l
-end
-
--- ================= メイン タブ =================
-CreateLabel(Tabs["Main"], "Syu Hubへようこそ", 1)
-CreateLabel(Tabs["Main"], "状態: 正常", 2)
-CreateButton(Tabs["Main"], "Discordをコピー (未設定)", 3, function() 
-    print("Discord link not set") 
-end)
-
--- ================= プレイヤー タブ =================
-local WalkSpeed = 16
-local JumpPower = 50
-local Fly = false
-local Noclip = false
-local InfJump = false
-
-CreateLabel(Tabs["Player"], "移動ステータス", 1)
-
-CreateButton(Tabs["Player"], "速度 +4 (現在: 16)", 2, function(self)
-    WalkSpeed = WalkSpeed + 4
-    if Humanoid then Humanoid.WalkSpeed = WalkSpeed end
-end)
-
-CreateButton(Tabs["Player"], "ジャンプ +20 (現在: 50)", 3, function(self)
-    JumpPower = JumpPower + 20
-    if Humanoid then Humanoid.JumpPower = JumpPower end
-end)
-
-CreateButton(Tabs["Player"], "ステータスをリセット", 4, function()
-    WalkSpeed = 16
-    JumpPower = 50
-    if Humanoid then
-        Humanoid.WalkSpeed = 16
-        Humanoid.JumpPower = 50
-    end
-end)
-
-CreateLabel(Tabs["Player"], "チート機能", 5)
-
-local FlyBtn = CreateButton(Tabs["Player"], "飛行 (Fly): OFF", 6, function()
-    Fly = not Fly
-end)
-
-local NoclipBtn = CreateButton(Tabs["Player"], "壁抜け (Noclip): OFF", 7, function()
-    Noclip = not Noclip
-end)
-
-local InfJumpBtn = CreateButton(Tabs["Player"], "無限ジャンプ: OFF", 8, function()
-    InfJump = not InfJump
-end)
-
--- ループ処理 (ボタンのテキスト更新含む)
-RunService.RenderStepped:Connect(function()
-    if Tabs["Player"].Visible then
-        FlyBtn.Text = "飛行 (Fly): " .. (Fly and "ON" or "OFF")
-        NoclipBtn.Text = "壁抜け (Noclip): " .. (Noclip and "ON" or "OFF")
-        InfJumpBtn.Text = "無限ジャンプ: " .. (InfJump and "ON" or "OFF")
-    end
-
-    if Fly and HRP then
-        HRP.Velocity = Camera.CFrame.LookVector * 60
-    end
-
-    if Noclip and Character then
-        for _,v in pairs(Character:GetDescendants()) do
-            if v:IsA("BasePart") then v.CanCollide = false end
+local function AddButton(parent, text, callback)
+    local btn = Instance.new("TextButton", parent)
+    local layoutOrder = #parent:GetChildren()
+    btn.Size = UDim2.new(1, -10, 0, 35)
+    btn.Position = UDim2.new(0, 5, 0, layoutOrder * 40)
+    btn.Text = text
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 13
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    
+    btn.MouseButton1Click:Connect(function()
+        -- エラーで止まらないようにpcallで囲む
+        local success, err = pcall(callback)
+        if not success then
+            btn.Text = "エラー!"
+            task.wait(1)
+            btn.Text = text
+            warn("Button Error: " .. err)
         end
+    end)
+    return btn
+end
+
+-- --- プレイヤー機能 ---
+local SpeedEnabled = false
+local SpeedVal = 25
+local JumpEnabled = false
+local JumpVal = 80
+local FlyEnabled = false
+local NoclipEnabled = false
+
+-- スピード
+AddButton(PlayerTab, "速度UP (Loop): OFF", function()
+    SpeedEnabled = not SpeedEnabled
+end).Name = "SpeedBtn"
+
+-- ジャンプ
+AddButton(PlayerTab, "ジャンプ力UP: OFF", function()
+    JumpEnabled = not JumpEnabled
+end).Name = "JumpBtn"
+
+-- フライ
+AddButton(PlayerTab, "飛行 (Fly): OFF", function()
+    FlyEnabled = not FlyEnabled
+end).Name = "FlyBtn"
+
+-- 壁抜け
+AddButton(PlayerTab, "壁抜け (Noclip): OFF", function()
+    NoclipEnabled = not NoclipEnabled
+end).Name = "NoclipBtn"
+
+-- ループ処理（最強の適用方法）
+RunService.RenderStepped:Connect(function()
+    local char = LP.Character
+    if not char then return end
+    local hum = char:FindFirstChild("Humanoid")
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+
+    -- ボタンの表示更新
+    if PlayerTab:FindFirstChild("SpeedBtn") then
+        PlayerTab.SpeedBtn.Text = "速度UP (Loop): " .. (SpeedEnabled and "ON" or "OFF")
     end
-end)
-
-UserInputService.JumpRequest:Connect(function()
-    if InfJump and Humanoid then
-        Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    if PlayerTab:FindFirstChild("JumpBtn") then
+        PlayerTab.JumpBtn.Text = "ジャンプ力UP: " .. (JumpEnabled and "ON" or "OFF")
     end
-end)
+    if PlayerTab:FindFirstChild("FlyBtn") then
+        PlayerTab.FlyBtn.Text = "飛行 (Fly): " .. (FlyEnabled and "ON" or "OFF")
+    end
+    if PlayerTab:FindFirstChild("NoclipBtn") then
+        PlayerTab.NoclipBtn.Text = "壁抜け (Noclip): " .. (NoclipEnabled and "ON" or "OFF")
+    end
 
--- ================= フリング タブ =================
-local AutoThrow = false
-local AutoClick = false
+    -- 機能実行
+    if hum and hrp then
+        if SpeedEnabled then
+            hum.WalkSpeed = SpeedVal
+        end
+        
+        if JumpEnabled then
+            hum.JumpPower = JumpVal
+        end
 
-CreateLabel(Tabs["Fling"], "物理演算", 1)
+        if FlyEnabled then
+            -- 落下を防ぐ
+            local bv = hrp:FindFirstChild("SyuFly")
+            if not bv then
+                bv = Instance.new("BodyVelocity", hrp)
+                bv.Name = "SyuFly"
+                bv.MaxForce = Vector3.new(100000, 100000, 100000)
+            end
+            bv.Velocity = Camera.CFrame.LookVector * 50
+        else
+            if hrp:FindFirstChild("SyuFly") then
+                hrp.SyuFly:Destroy()
+            end
+        end
 
-CreateButton(Tabs["Fling"], "最大筋力 (物理演算有効化)", 2, function()
-    if Humanoid then
-        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Physics, true)
-        -- Fling Things and People特有のラグドール解除などを試みる
-        for _, v in pairs(Character:GetDescendants()) do
-            if v:IsA("BasePart") then
-                v.Massless = false
-                v.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5) -- 重くする
+        if NoclipEnabled then
+            for _, v in pairs(char:GetDescendants()) do
+                if v:IsA("BasePart") and v.CanCollide then
+                    v.CanCollide = false
+                end
             end
         end
     end
 end)
 
-CreateButton(Tabs["Fling"], "自動連打 (掴み用): OFF", 3, function(btn)
-    AutoClick = not AutoClick
-    btn.Text = "自動連打 (掴み用): " .. (AutoClick and "ON" or "OFF")
+-- --- メイン/フリング機能 ---
+AddButton(MainTab, "リセット (再読み込み)", function()
+    local char = LP.Character
+    if char and char:FindFirstChild("Humanoid") then
+        char.Humanoid.Health = 0
+    end
 end)
 
--- オートクリックのロジック
-task.spawn(function()
-    while true do
-        task.wait(0.1)
-        if AutoClick then
-            mouse1click() -- 多くのExecutorで動作する関数
+AddButton(MainTab, "力強化 (Physics)", function()
+    local char = LP.Character
+    if char then
+        for _, v in pairs(char:GetDescendants()) do
+            if v:IsA("BasePart") then
+                v.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
+            end
         end
     end
 end)
 
--- ================= 表示 (Visual) タブ =================
--- Mobile対応のため、Drawing APIではなくHighlightを使用
-local ESP_Enabled = false
+-- --- ESP機能 (軽量版) ---
 local ESP_Holder = Instance.new("Folder", CoreGui)
-ESP_Holder.Name = "Syu_ESP_Holder"
+local ESP_On = false
 
-local function UpdateESP()
+local function RefreshESP()
     ESP_Holder:ClearAllChildren()
-    if not ESP_Enabled then return end
+    if not ESP_On then return end
 
-    for _, plr in pairs(Players:GetPlayers()) do
-        if plr ~= LP and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-            local highlight = Instance.new("Highlight")
-            highlight.Adornee = plr.Character
-            highlight.Parent = ESP_Holder
-            highlight.FillColor = Color3.fromRGB(255, 0, 0)
-            highlight.FillTransparency = 0.5
-            highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-            highlight.OutlineTransparency = 0
-            
-            -- 名前表示（BillboardGui）
-            local bg = Instance.new("BillboardGui", ESP_Holder)
-            bg.Adornee = plr.Character.Head
-            bg.Size = UDim2.new(0,100,0,50)
-            bg.StudsOffset = Vector3.new(0, 3, 0)
-            bg.AlwaysOnTop = true
-            
-            local name = Instance.new("TextLabel", bg)
-            name.Size = UDim2.new(1,0,1,0)
-            name.BackgroundTransparency = 1
-            name.Text = plr.Name
-            name.TextColor3 = Color3.new(1,1,1)
-            name.TextStrokeTransparency = 0
-            name.Font = Enum.Font.GothamBold
-            name.TextSize = 14
+    for _, v in pairs(Players:GetPlayers()) do
+        if v ~= LP and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+            local h = Instance.new("Highlight")
+            h.Parent = ESP_Holder
+            h.Adornee = v.Character
+            h.FillColor = Color3.fromRGB(255, 0, 0)
+            h.OutlineColor = Color3.fromRGB(255, 255, 255)
+            h.FillTransparency = 0.5
         end
     end
 end
 
-CreateButton(Tabs["Visual"], "プレイヤーESP (透視): OFF", 1, function(btn)
-    ESP_Enabled = not ESP_Enabled
-    btn.Text = "プレイヤーESP (透視): " .. (ESP_Enabled and "ON" or "OFF")
-    if not ESP_Enabled then ESP_Holder:ClearAllChildren() end
-end)
+AddButton(VisualTab, "プレイヤーESP: OFF", function()
+    ESP_On = not ESP_On
+    RefreshESP()
+end).Name = "EspBtn"
 
--- 定期的にESPを更新（プレイヤーの出入りに対応）
 task.spawn(function()
-    while true do
-        task.wait(1)
-        if ESP_Enabled then UpdateESP() end
+    while task.wait(1) do
+        if VisualTab:FindFirstChild("EspBtn") then
+             VisualTab.EspBtn.Text = "プレイヤーESP: " .. (ESP_On and "ON" or "OFF")
+        end
+        if ESP_On then RefreshESP() end
     end
 end)
 
--- FOV設定
-local ShowFOV = false
-local FOVCircle = nil
--- Drawing APIが使えるか確認
-if Drawing then
-    FOVCircle = Drawing.new("Circle")
-    FOVCircle.Radius = 120
-    FOVCircle.Thickness = 2
-    FOVCircle.Filled = false
-    FOVCircle.Color = Color3.fromRGB(255,255,255)
-    FOVCircle.Visible = false
-    
-    CreateButton(Tabs["Visual"], "FOV円を表示: OFF", 2, function(btn)
-        ShowFOV = not ShowFOV
-        FOVCircle.Visible = ShowFOV
-        btn.Text = "FOV円を表示: " .. (ShowFOV and "ON" or "OFF")
-    end)
-    
-    RunService.RenderStepped:Connect(function()
-        if ShowFOV and FOVCircle then
-            FOVCircle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
-        end
-    end)
-else
-    CreateLabel(Tabs["Visual"], "※お使いの環境ではFOV円は非対応です", 2)
-end
-
--- ================= 設定 タブ =================
-CreateButton(Tabs["Settings"], "UIを完全に削除", 1, function()
+-- --- 設定 ---
+AddButton(SettingsTab, "UIを削除", function()
     GUI:Destroy()
-    if FOVCircle then FOVCircle:Remove() end
     ESP_Holder:Destroy()
 end)
 
-CreateLabel(Tabs["Settings"], "キーバインド: 右Shift", 3)
-CreateLabel(Tabs["Settings"], "または画面右のボタン", 4)
-
--- ================= キーバインド処理 =================
-UserInputService.InputBegan:Connect(function(i,g)
-    if g then return end
-    if i.KeyCode == Enum.KeyCode.RightShift then
-        Main.Visible = not Main.Visible
-    end
-end)
-
-print("Syu Ultimate Complete Hub (JP/Mobile) Loaded")
+print("Syu Hub Fixed Loaded")
