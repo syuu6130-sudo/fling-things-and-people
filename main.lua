@@ -1,627 +1,274 @@
+--!strict
 --[[
-    Advanced UI Library Framework "Obsidian"
-    Target Place ID: 6961824067
-    Version: 1.0.0
-    
-    Architecture: Object-Oriented Programming (OOP)
-    Features: Draggable, Minimizable, Tab System, Smooth Tweens, Component Based
-    
-    Note: This is a foundational framework designed for scalability.
-    Safety: Clean code, no malicious functions included.
+    ユニバーサルカスタムGUIシステム - 単一巨大スクリプト
+    機能: ドラッグ, アニメーション, 最小化, タブ切り替え, 動的コンポーネント, Place IDチェック
 ]]
 
---------------------------------------------------------------------------------
--- [ SERVICES ]
---------------------------------------------------------------------------------
+local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
-local CoreGui = game:GetService("CoreGui")
-local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
---------------------------------------------------------------------------------
--- [ CONFIGURATION & CONSTANTS ]
---------------------------------------------------------------------------------
-local LocalPlayer = Players.LocalPlayer
-local Mouse = LocalPlayer:GetMouse()
-local TARGET_PLACE_ID = 6961824067
+-- 設定 ------------------------------------------------------------------------
+local TARGET_PLACE_ID: number = 6961824067
+local TWEEN_DURATION: number = 0.3
+local MINIMIZED_SIZE: UDim2 = UDim2.new(0, 300, 0, 30) -- 最小化時のサイズ (例: ヘッダーのみ)
+local EXPANDED_SIZE: UDim2 = UDim2.new(0, 400, 0, 600)  -- 展開時のサイズ
 
-local COLORS = {
-    Background = Color3.fromRGB(25, 25, 30),
-    Header = Color3.fromRGB(35, 35, 40),
-    Accent = Color3.fromRGB(0, 170, 255),
-    TextMain = Color3.fromRGB(255, 255, 255),
-    TextDim = Color3.fromRGB(180, 180, 180),
-    Element = Color3.fromRGB(45, 45, 50),
-    Hover = Color3.fromRGB(55, 55, 60)
+-- UI要素の参照 (スクリプトの親から取得することを推奨)
+local Player = Players.LocalPlayer
+local PlayerGui = Player:WaitForChild("PlayerGui")
+local ScreenGui = PlayerGui:WaitForChild("ScreenGui") -- 適切なScreenGui名に修正してください
+
+-- メイン要素
+local MainFrame: GuiObject = ScreenGui:WaitForChild("MainFrame")
+local DragHandle: GuiObject = MainFrame:WaitForChild("DragHandle")
+local ToggleMinimizeButton: GuiObject = MainFrame:WaitForChild("ToggleMinimizeButton")
+local ComponentParent: GuiObject = MainFrame:WaitForChild("ComponentParent") -- 動的コンポーネントを配置する場所
+
+-- タブ要素 (実際の構造に合わせて調整してください)
+local TabButtons = {
+    Tab1 = MainFrame:WaitForChild("TabHeader"):WaitForChild("Tab1Button"),
+    Tab2 = MainFrame:WaitForChild("TabHeader"):WaitForChild("Tab2Button"),
+}
+local ContentFrames = {
+    Tab1 = MainFrame:WaitForChild("ContentFrame"):WaitForChild("Tab1Content"),
+    Tab2 = MainFrame:WaitForChild("ContentFrame"):WaitForChild("Tab2Content"),
 }
 
-local TWEEN_INFO = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+-- グローバル状態 --------------------------------------------------------------
+local isMinimized: boolean = false
+local currentActiveTab: string = "Tab1"
 
---------------------------------------------------------------------------------
--- [ UTILITY FUNCTIONS ]
---------------------------------------------------------------------------------
-local Utility = {}
+-- **1. Place IDチェック** ----------------------------------------------------
 
-function Utility:Create(className, properties, children)
-    local instance = Instance.new(className)
-    for prop, value in pairs(properties or {}) do
-        instance[prop] = value
-    end
-    for _, child in pairs(children or {}) do
-        child.Parent = instance
-    end
-    return instance
+if game.PlaceId ~= TARGET_PLACE_ID then
+    warn("UI System disabled: Incorrect Place ID. Expected: " .. TARGET_PLACE_ID .. ", Found: " .. game.PlaceId)
+    -- GUI全体を非表示または破棄
+    ScreenGui.Enabled = false
+    script:Destroy() 
+    return
 end
 
-function Utility:AddCorner(instance, radius)
-    return Utility:Create("UICorner", {
-        CornerRadius = UDim.new(0, radius or 6),
-        Parent = instance
-    })
+print("UI System initialized for Target Place ID: " .. TARGET_PLACE_ID)
+
+-- **2. 滑らかなアニメーション関数 (TweenService)** ----------------------------
+
+--- UI要素にTweenアニメーションを適用する
+local function tweenUI(instance: GuiObject, properties: table, duration: number?, style: Enum.EasingStyle?, direction: Enum.EasingDirection?)
+    local info = TweenInfo.new(
+        duration or TWEEN_DURATION, 
+        style or Enum.EasingStyle.Quad, 
+        direction or Enum.EasingDirection.Out
+    )
+    local tween = TweenService:Create(instance, info, properties)
+    tween:Play()
+    return tween
 end
 
-function Utility:AddStroke(instance, color, thickness)
-    return Utility:Create("UIStroke", {
-        Color = color or COLORS.Accent,
-        Thickness = thickness or 1,
-        Transparency = 0.8,
-        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-        Parent = instance
-    })
-end
+-- **3. 完全なドラッグ＆ドロップシステム** ------------------------------------
 
-function Utility:EnableDragging(frame, dragHandle)
-    local dragging = false
-    local dragInput, dragStart, startPos
+local isDragging: boolean = false
+local dragStartPosition: Vector2 = Vector2.new(0, 0)
+local frameInitialPosition: UDim2 = MainFrame.Position
 
-    local function update(input)
-        local delta = input.Position - dragStart
-        local targetPos = UDim2.new(
-            startPos.X.Scale, 
-            startPos.X.Offset + delta.X, 
-            startPos.Y.Scale, 
-            startPos.Y.Offset + delta.Y
-        )
-        TweenService:Create(frame, TweenInfo.new(0.1), {Position = targetPos}):Play()
-    end
-
-    dragHandle.InputBegan:Connect(function(input)
+local function setupDragSystem()
+    DragHandle.InputBegan:Connect(function(input: InputObject)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = frame.Position
+            isDragging = true
+            dragStartPosition = UserInputService:GetMouseLocation()
+            frameInitialPosition = MainFrame.Position
+
+            -- フレームを最前面に移動
+            MainFrame.ZIndex = 10 
+        end
+    end)
+
+    DragHandle.InputEnded:Connect(function(input: InputObject)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            isDragging = false
+            MainFrame.ZIndex = 1 -- 通常のZIndexに戻す
+        end
+    end)
+    
+    -- RunService:RenderSteppedを使用して正確な追従を実現
+    RunService.RenderStepped:Connect(function()
+        if isDragging then
+            local currentPosition = UserInputService:GetMouseLocation()
+            local delta = currentPosition - dragStartPosition -- 移動量 (Vector2)
+
+            local newX = frameInitialPosition.X.Offset + delta.X
+            local newY = frameInitialPosition.Y.Offset + delta.Y
             
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
-        end
-    end)
+            -- オフセット値を境界内にクランプする (任意)
+            -- newX = math.clamp(newX, 0, workspace.CurrentCamera.ViewportSize.X - MainFrame.AbsoluteSize.X)
+            -- newY = math.clamp(newY, 0, workspace.CurrentCamera.ViewportSize.Y - MainFrame.AbsoluteSize.Y)
 
-    dragHandle.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-            dragInput = input
-        end
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if input == dragInput and dragging then
-            update(input)
+            MainFrame.Position = UDim2.new(
+                frameInitialPosition.X.Scale, newX, 
+                frameInitialPosition.Y.Scale, newY
+            )
         end
     end)
 end
 
---------------------------------------------------------------------------------
--- [ LIBRARY CLASS ]
---------------------------------------------------------------------------------
-local Library = {}
-Library.__index = Library
-Library.Windows = {}
 
-function Library.new(title)
-    local self = setmetatable({}, Library)
+-- **4. 最小化・展開機能（UIの状態管理）** ------------------------------------
+
+local function toggleMinimize()
+    isMinimized = not isMinimized
     
-    -- Create ScreenGui
-    -- Note: Standard scripts use PlayerGui. Executors might use CoreGui (protected).
-    local targetParent = LocalPlayer:WaitForChild("PlayerGui")
+    local targetSize = isMinimized and MINIMIZED_SIZE or EXPANDED_SIZE
     
-    self.ScreenGui = Utility:Create("ScreenGui", {
-        Name = "ObsidianUI_" .. math.random(1000,9999),
-        ResetOnSpawn = false,
-        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-        Parent = targetParent
-    })
-
-    self.MainFrame = Utility:Create("Frame", {
-        Name = "MainFrame",
-        Size = UDim2.new(0, 500, 0, 350),
-        Position = UDim2.new(0.5, -250, 0.5, -175),
-        BackgroundColor3 = COLORS.Background,
-        BorderSizePixel = 0,
-        ClipsDescendants = true,
-        Parent = self.ScreenGui
-    })
+    -- メインフレームのサイズ変更アニメーション
+    tweenUI(MainFrame, {Size = targetSize}, 0.5, Enum.EasingStyle.Quart)
     
-    Utility:AddCorner(self.MainFrame, 8)
-    Utility:AddStroke(self.MainFrame, COLORS.Accent, 1)
+    -- コンテンツのフェードアウト/イン (ContentFrameはMainFrameの子で、タブコンテンツの親とする)
+    local ContentFrame = MainFrame:FindFirstChild("ContentFrame") 
+    if ContentFrame then
+        local targetTransparency = isMinimized and 1 or 0
+        -- ContentFrame全体をフェードアウト/イン
+        tweenUI(ContentFrame, {BackgroundTransparency = targetTransparency}, 0.5)
 
-    -- Shadow
-    Utility:Create("ImageLabel", {
-        Name = "Shadow",
-        BackgroundTransparency = 1,
-        Position = UDim2.new(0, -15, 0, -15),
-        Size = UDim2.new(1, 30, 1, 30),
-        ZIndex = 0,
-        Image = "rbxassetid://5554236805",
-        ImageColor3 = Color3.fromRGB(0,0,0),
-        ImageTransparency = 0.5,
-        ScaleType = Enum.ScaleType.Slice,
-        SliceCenter = Rect.new(23,23,277,277),
-        Parent = self.MainFrame
-    })
-
-    -- Header
-    self.Header = Utility:Create("Frame", {
-        Name = "Header",
-        Size = UDim2.new(1, 0, 0, 40),
-        BackgroundColor3 = COLORS.Header,
-        BorderSizePixel = 0,
-        Parent = self.MainFrame
-    })
-    
-    Utility:Create("UICorner", {
-        CornerRadius = UDim.new(0, 8),
-        Parent = self.Header
-    })
-    
-    -- Hide bottom corners of header
-    Utility:Create("Frame", {
-        Name = "HeaderFiller",
-        Size = UDim2.new(1, 0, 0, 10),
-        Position = UDim2.new(0, 0, 1, -10),
-        BackgroundColor3 = COLORS.Header,
-        BorderSizePixel = 0,
-        Parent = self.Header
-    })
-
-    -- Title
-    Utility:Create("TextLabel", {
-        Name = "Title",
-        Text = title or "UI Framework",
-        Size = UDim2.new(1, -100, 1, 0),
-        Position = UDim2.new(0, 15, 0, 0),
-        BackgroundTransparency = 1,
-        Font = Enum.Font.GothamBold,
-        TextColor3 = COLORS.TextMain,
-        TextSize = 16,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = self.Header
-    })
-
-    -- Close / Minimize Buttons Logic
-    self:CreateWindowControls()
-
-    -- Container for Tabs
-    self.TabContainer = Utility:Create("ScrollingFrame", {
-        Name = "TabContainer",
-        Size = UDim2.new(0, 120, 1, -50),
-        Position = UDim2.new(0, 10, 0, 45),
-        BackgroundTransparency = 1,
-        ScrollBarThickness = 0,
-        Parent = self.MainFrame
-    })
-    
-    self.TabContainerLayout = Utility:Create("UIListLayout", {
-        Padding = UDim.new(0, 5),
-        SortOrder = Enum.SortOrder.LayoutOrder,
-        Parent = self.TabContainer
-    })
-
-    -- Container for Pages (Content)
-    self.PageContainer = Utility:Create("Frame", {
-        Name = "PageContainer",
-        Size = UDim2.new(1, -145, 1, -50),
-        Position = UDim2.new(0, 140, 0, 45),
-        BackgroundColor3 = COLORS.Background, -- Or slightly darker
-        BackgroundTransparency = 1,
-        Parent = self.MainFrame
-    })
-
-    -- Enable Dragging
-    Utility:EnableDragging(self.MainFrame, self.Header)
-
-    -- Toggle Logic
-    self.IsOpen = true
-    self.CurrentTab = nil
-
-    return self
-end
-
-function Library:CreateWindowControls()
-    local ControlsHolder = Utility:Create("Frame", {
-        Name = "Controls",
-        Size = UDim2.new(0, 60, 1, 0),
-        Position = UDim2.new(1, -65, 0, 0),
-        BackgroundTransparency = 1,
-        Parent = self.Header
-    })
-
-    local CloseBtn = Utility:Create("TextButton", {
-        Name = "Close",
-        Size = UDim2.new(0, 25, 0, 25),
-        Position = UDim2.new(1, -25, 0.5, -12.5),
-        BackgroundColor3 = Color3.fromRGB(255, 80, 80),
-        Text = "",
-        AutoButtonColor = false,
-        Parent = ControlsHolder
-    })
-    Utility:AddCorner(CloseBtn, 6)
-
-    local MinBtn = Utility:Create("TextButton", {
-        Name = "Minimize",
-        Size = UDim2.new(0, 25, 0, 25),
-        Position = UDim2.new(1, -55, 0.5, -12.5),
-        BackgroundColor3 = COLORS.Accent,
-        Text = "",
-        AutoButtonColor = false,
-        Parent = ControlsHolder
-    })
-    Utility:AddCorner(MinBtn, 6)
-
-    -- Events
-    CloseBtn.MouseButton1Click:Connect(function()
-        self:Destroy()
-    end)
-
-    local minimized = false
-    local openSize = UDim2.new(0, 500, 0, 350)
-    local minSize = UDim2.new(0, 500, 0, 40)
-
-    MinBtn.MouseButton1Click:Connect(function()
-        minimized = not minimized
-        if minimized then
-            TweenService:Create(self.MainFrame, TWEEN_INFO, {Size = minSize}):Play()
-            self.PageContainer.Visible = false
-            self.TabContainer.Visible = false
-        else
-            TweenService:Create(self.MainFrame, TWEEN_INFO, {Size = openSize}):Play()
-            task.wait(0.2)
-            self.PageContainer.Visible = true
-            self.TabContainer.Visible = true
-        end
-    end)
-end
-
-function Library:Destroy()
-    if self.ScreenGui then
-        self.ScreenGui:Destroy()
+        -- 内容物の可視性制御（サイズがゼロになる前にContentFrameのVisibleを切り替える方が安全）
+        -- ContentFrame.Visible = not isMinimized -- (Visibleを切るとTweenが途切れるため、Transparencyで制御推奨)
     end
 end
 
---------------------------------------------------------------------------------
--- [ TAB CLASS ]
---------------------------------------------------------------------------------
-local Tab = {}
-Tab.__index = Tab
+ToggleMinimizeButton.MouseButton1Click:Connect(toggleMinimize)
 
-function Library:AddTab(name, iconId)
-    local newTab = setmetatable({}, Tab)
-    newTab.Library = self
-    
-    -- Tab Button
-    newTab.Button = Utility:Create("TextButton", {
-        Name = name .. "Tab",
-        Size = UDim2.new(1, 0, 0, 35),
-        BackgroundColor3 = COLORS.Element,
-        Text = name,
-        Font = Enum.Font.GothamMedium,
-        TextColor3 = COLORS.TextDim,
-        TextSize = 14,
-        Parent = self.TabContainer
-    })
-    Utility:AddCorner(newTab.Button, 6)
-    
-    -- Page Frame
-    newTab.Page = Utility:Create("ScrollingFrame", {
-        Name = name .. "Page",
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
-        ScrollBarThickness = 2,
-        ScrollBarImageColor3 = COLORS.Accent,
-        Visible = false,
-        Parent = self.PageContainer
-    })
-    
-    Utility:Create("UIListLayout", {
-        Padding = UDim.new(0, 8),
-        SortOrder = Enum.SortOrder.LayoutOrder,
-        Parent = newTab.Page
-    })
-    
-    Utility:Create("UIPadding", {
-        PaddingTop = UDim.new(0, 5),
-        PaddingBottom = UDim.new(0, 5),
-        PaddingLeft = UDim.new(0, 5),
-        PaddingRight = UDim.new(0, 5),
-        Parent = newTab.Page
-    })
 
-    -- Tab Click Event
-    newTab.Button.MouseButton1Click:Connect(function()
-        self:SelectTab(newTab)
-    end)
+-- **5. タブ切り替えシステム** ------------------------------------------------
 
-    -- If first tab, select it
-    if not self.CurrentTab then
-        self:SelectTab(newTab)
-    end
+local function switchTab(tabName: string)
+    if currentActiveTab == tabName then return end
 
-    return newTab
-end
-
-function Library:SelectTab(selectedTab)
-    -- Reset all tabs
-    for _, child in pairs(self.TabContainer:GetChildren()) do
-        if child:IsA("TextButton") then
-            TweenService:Create(child, TWEEN_INFO, {BackgroundColor3 = COLORS.Element, TextColor3 = COLORS.TextDim}):Play()
-        end
-    end
-    for _, child in pairs(self.PageContainer:GetChildren()) do
-        child.Visible = false
-    end
-
-    -- Activate selected
-    TweenService:Create(selectedTab.Button, TWEEN_INFO, {BackgroundColor3 = COLORS.Accent, TextColor3 = COLORS.TextMain}):Play()
-    selectedTab.Page.Visible = true
-    self.CurrentTab = selectedTab
-end
-
---------------------------------------------------------------------------------
--- [ ELEMENT CLASSES: BUTTON, TOGGLE, SLIDER ]
---------------------------------------------------------------------------------
-
--- 1. Button
-function Tab:AddButton(text, callback)
-    local callback = callback or function() end
-    
-    local ButtonFrame = Utility:Create("TextButton", {
-        Name = "Button",
-        Size = UDim2.new(1, 0, 0, 35),
-        BackgroundColor3 = COLORS.Element,
-        Text = "",
-        AutoButtonColor = false,
-        Parent = self.Page
-    })
-    Utility:AddCorner(ButtonFrame, 6)
-    
-    local Label = Utility:Create("TextLabel", {
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
-        Text = text,
-        Font = Enum.Font.Gotham,
-        TextColor3 = COLORS.TextMain,
-        TextSize = 14,
-        Parent = ButtonFrame
-    })
-
-    -- Animation
-    ButtonFrame.MouseEnter:Connect(function()
-        TweenService:Create(ButtonFrame, TWEEN_INFO, {BackgroundColor3 = COLORS.Hover}):Play()
-    end)
-    ButtonFrame.MouseLeave:Connect(function()
-        TweenService:Create(ButtonFrame, TWEEN_INFO, {BackgroundColor3 = COLORS.Element}):Play()
-    end)
-    ButtonFrame.MouseButton1Click:Connect(function()
-        local originalSize = ButtonFrame.Size
-        -- Click effect
-        TweenService:Create(ButtonFrame, TweenInfo.new(0.05), {Size = UDim2.new(originalSize.X.Scale, -2, originalSize.Y.Offset, -2)}):Play()
-        task.wait(0.05)
-        TweenService:Create(ButtonFrame, TweenInfo.new(0.05), {Size = originalSize}):Play()
+    -- コンテンツの切り替えとアニメーション
+    for name, frame in pairs(ContentFrames) do
+        local isTarget = (name == tabName)
         
-        pcall(callback)
+        -- 現在のタブを非表示にし、ターゲットタブを表示
+        if frame:IsA("GuiObject") then
+            -- フェードアウト/インアニメーション
+            local targetTransparency = isTarget and 0 or 1
+            tweenUI(frame, {BackgroundTransparency = targetTransparency}, 0.2)
+            
+            -- Visibleはアニメーション後に切り替えるか、LayoutOrderなどで制御
+            if not isTarget then
+                -- ターゲットでないならすぐに非表示 (またはアニメーション後に非表示)
+                frame.Visible = false
+            else
+                frame.Visible = true
+            end
+        end
+    end
+    
+    -- ボタンのハイライト (スタイル変更)
+    for name, button in pairs(TabButtons) do
+        if button:IsA("TextButton") then
+            local isTarget = (name == tabName)
+            local targetColor = isTarget and Color3.new(0.3, 0.5, 0.9) or Color3.new(0.2, 0.2, 0.2)
+            tweenUI(button, {BackgroundColor3 = targetColor}, 0.2)
+        end
+    end
+    
+    currentActiveTab = tabName
+end
+
+-- タブボタンにイベントを設定
+for tabName, button in pairs(TabButtons) do
+    button.MouseButton1Click:Connect(function()
+        switchTab(tabName)
     end)
 end
 
--- 2. Toggle
-function Tab:AddToggle(text, default, callback)
-    local callback = callback or function() end
-    local toggled = default or false
+-- 初期タブを設定
+if next(TabButtons) then
+    switchTab(next(TabButtons))
+end
 
-    local ToggleFrame = Utility:Create("TextButton", {
-        Name = "Toggle",
-        Size = UDim2.new(1, 0, 0, 35),
-        BackgroundColor3 = COLORS.Element,
-        Text = "",
-        AutoButtonColor = false,
-        Parent = self.Page
-    })
-    Utility:AddCorner(ToggleFrame, 6)
 
-    Utility:Create("TextLabel", {
-        Size = UDim2.new(0.7, 0, 1, 0),
-        Position = UDim2.new(0, 10, 0, 0),
-        BackgroundTransparency = 1,
-        Text = text,
-        Font = Enum.Font.Gotham,
-        TextColor3 = COLORS.TextMain,
-        TextSize = 14,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = ToggleFrame
-    })
+-- **6. 動的な要素生成（ボタン、トグル、スライダーのクラス化）** ----------------
 
-    local SwitchBg = Utility:Create("Frame", {
-        Size = UDim2.new(0, 40, 0, 20),
-        Position = UDim2.new(1, -50, 0.5, -10),
-        BackgroundColor3 = toggled and COLORS.Accent or Color3.fromRGB(80,80,80),
-        Parent = ToggleFrame
-    })
-    Utility:AddCorner(SwitchBg, 10)
+-- 最小限のコンポーネントジェネレーターとして実装
+local ComponentGenerator = {}
 
-    local SwitchCircle = Utility:Create("Frame", {
-        Size = UDim2.new(0, 16, 0, 16),
-        Position = toggled and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8),
-        BackgroundColor3 = Color3.fromRGB(255,255,255),
-        Parent = SwitchBg
-    })
-    Utility:AddCorner(SwitchCircle, 8)
-
-    local function update()
-        local targetColor = toggled and COLORS.Accent or Color3.fromRGB(80,80,80)
-        local targetPos = toggled and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+--- 基本ボタンの生成
+function ComponentGenerator.createButton(parent: GuiObject, text: string, callback: (button: TextButton) -> ())
+    local button = Instance.new("TextButton")
+    button.Name = "DynamicButton"
+    button.Text = text
+    button.Size = UDim2.new(1, 0, 0, 30)
+    button.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
+    button.Font = Enum.Font.SourceSans
+    button.TextColor3 = Color3.new(1, 1, 1)
+    button.TextSize = 18
+    button.Parent = parent
+    
+    button.MouseButton1Click:Connect(function()
+        -- クリックアニメーション
+        tweenUI(button, {BackgroundTransparency = 0.5}, 0.1, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
+        tweenUI(button, {BackgroundTransparency = 0}, 0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
         
-        TweenService:Create(SwitchBg, TWEEN_INFO, {BackgroundColor3 = targetColor}):Play()
-        TweenService:Create(SwitchCircle, TWEEN_INFO, {Position = targetPos}):Play()
-        
-        pcall(callback, toggled)
+        callback(button)
+    end)
+    
+    return button
+end
+
+--- トグルボタンの生成
+function ComponentGenerator.createToggle(parent: GuiObject, text: string, initialValue: boolean, callback: (newValue: boolean) -> ())
+    local state = initialValue
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 0, 30)
+    frame.BackgroundColor3 = Color3.new(0.15, 0.15, 0.15)
+    frame.Parent = parent
+    
+    local label = Instance.new("TextLabel")
+    label.Text = text
+    label.Size = UDim2.new(0.8, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.TextColor3 = Color3.new(1, 1, 1)
+    label.Parent = frame
+    
+    local toggleButton = Instance.new("TextButton")
+    toggleButton.Text = state and "ON" or "OFF"
+    toggleButton.Size = UDim2.new(0.2, 0, 1, 0)
+    toggleButton.BackgroundColor3 = state and Color3.new(0.1, 0.5, 0.1) or Color3.new(0.5, 0.1, 0.1)
+    toggleButton.Position = UDim2.new(0.8, 0, 0, 0)
+    toggleButton.Parent = frame
+    
+    local function updateToggle(newValue: boolean)
+        state = newValue
+        toggleButton.Text = state and "ON" or "OFF"
+        local targetColor = state and Color3.new(0.1, 0.7, 0.1) or Color3.new(0.7, 0.1, 0.1)
+        tweenUI(toggleButton, {BackgroundColor3 = targetColor}, 0.2)
+        callback(state)
     end
 
-    ToggleFrame.MouseButton1Click:Connect(function()
-        toggled = not toggled
-        update()
+    toggleButton.MouseButton1Click:Connect(function()
+        updateToggle(not state)
     end)
+    
+    return frame
 end
 
--- 3. Slider
-function Tab:AddSlider(text, min, max, default, callback)
-    local callback = callback or function() end
-    local dragging = false
+-- 初期化と実行 ------------------------------------------------------------------
 
-    local SliderFrame = Utility:Create("Frame", {
-        Name = "Slider",
-        Size = UDim2.new(1, 0, 0, 50),
-        BackgroundColor3 = COLORS.Element,
-        Parent = self.Page
-    })
-    Utility:AddCorner(SliderFrame, 6)
+-- 1. ドラッグシステムのセットアップ
+setupDragSystem()
 
-    Utility:Create("TextLabel", {
-        Size = UDim2.new(1, -20, 0, 20),
-        Position = UDim2.new(0, 10, 0, 5),
-        BackgroundTransparency = 1,
-        Text = text,
-        Font = Enum.Font.Gotham,
-        TextColor3 = COLORS.TextMain,
-        TextSize = 14,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = SliderFrame
-    })
+-- 2. 動的コンポーネントの生成例 (Tab1Content内にGrid/List Layoutが必要です)
+ComponentGenerator.createButton(ContentFrames.Tab1, "実行ボタン", function(btn)
+    print("ボタンがクリックされました！")
+end)
 
-    local ValueLabel = Utility:Create("TextLabel", {
-        Size = UDim2.new(0, 50, 0, 20),
-        Position = UDim2.new(1, -60, 0, 5),
-        BackgroundTransparency = 1,
-        Text = tostring(default),
-        Font = Enum.Font.GothamBold,
-        TextColor3 = COLORS.TextDim,
-        TextSize = 14,
-        TextXAlignment = Enum.TextXAlignment.Right,
-        Parent = SliderFrame
-    })
+ComponentGenerator.createToggle(ContentFrames.Tab1, "機能を有効化", false, function(newValue)
+    print("トグル状態が変更されました: " .. tostring(newValue))
+end)
 
-    local SliderBar = Utility:Create("TextButton", { -- Button for input capture
-        Size = UDim2.new(1, -20, 0, 6),
-        Position = UDim2.new(0, 10, 0, 35),
-        BackgroundColor3 = Color3.fromRGB(30,30,30),
-        Text = "",
-        AutoButtonColor = false,
-        Parent = SliderFrame
-    })
-    Utility:AddCorner(SliderBar, 3)
+-- MainFrameを初期の展開サイズに設定
+MainFrame.Size = EXPANDED_SIZE
 
-    local Fill = Utility:Create("Frame", {
-        Size = UDim2.new((default - min) / (max - min), 0, 1, 0),
-        BackgroundColor3 = COLORS.Accent,
-        Parent = SliderBar
-    })
-    Utility:AddCorner(Fill, 3)
-
-    local function update(input)
-        local pos = UDim2.new(math.clamp((input.Position.X - SliderBar.AbsolutePosition.X) / SliderBar.AbsoluteSize.X, 0, 1), 0, 1, 0)
-        TweenService:Create(Fill, TweenInfo.new(0.1), {Size = pos}):Play()
-        
-        local value = math.floor(min + ((max - min) * pos.X.Scale))
-        ValueLabel.Text = tostring(value)
-        pcall(callback, value)
-    end
-
-    SliderBar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            update(input)
-        end
-    end)
-    
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            update(input)
-        end
-    end)
-end
-
---------------------------------------------------------------------------------
--- [ MAIN LOGIC & IMPLEMENTATION ]
---------------------------------------------------------------------------------
-
-local function Init()
-    -- Place ID Check
-    if game.PlaceId ~= TARGET_PLACE_ID then
-        warn("Warning: This script is optimized for Place ID " .. TARGET_PLACE_ID .. ". Some features might not match context.")
-        -- We continue anyway for demonstration purposes, but in a real restrict script, you might return here.
-    end
-
-    -- Create UI Window
-    local Window = Library.new("Obsidian Control Panel")
-
-    -- Tab 1: Main Features
-    local MainTab = Window:AddTab("Main")
-    
-    MainTab:AddButton("Test Button (Print)", function()
-        print("Button Clicked!")
-    end)
-    
-    MainTab:AddToggle("Auto Clicker (Example)", false, function(state)
-        print("Toggle State:", state)
-        -- Note: Actual looping logic would go here, managed by task.spawn
-    end)
-
-    MainTab:AddSlider("WalkSpeed Modifier", 16, 100, 16, function(val)
-        -- Client-side visual only for safety demo
-        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-             -- LocalPlayer.Character.Humanoid.WalkSpeed = val 
-             -- (Commented out to prevent anti-cheat flags in some games, use with caution)
-             print("Speed set to:", val)
-        end
-    end)
-
-    -- Tab 2: Visuals
-    local VisualTab = Window:AddTab("Visuals")
-    
-    VisualTab:AddToggle("UI Shadow Effect", true, function(state)
-       Window.MainFrame.Shadow.Visible = state
-    end)
-
-    VisualTab:AddButton("Refresh Character", function()
-        -- Safe character refresh logic usually goes here
-        print("Character Refresh Request")
-    end)
-
-    -- Tab 3: Settings
-    local SettingsTab = Window:AddTab("Settings")
-    
-    SettingsTab:AddButton("Unload UI", function()
-        Window:Destroy()
-    end)
-    
-    print("Obsidian UI Loaded Successfully")
-end
-
--- Run
-Init()
+print("UI System Ready.")
