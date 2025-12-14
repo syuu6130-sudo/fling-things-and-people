@@ -1,7 +1,10 @@
---[[
+import os
+
+# The optimized Lua script content (The Force Move/CFrame version that actually works on mobile/physics games)
+lua_content = r'''--[[
 ====================================================
- Syu Hub: FORCE MOVE EDITION
- 対象: Fling Things and People (物理演算無視版)
+ Syu Ultimate Complete Hub (Mobile/Physics Fix)
+ Ver: 3.0 Force Move Edition
 ====================================================
 ]]
 
@@ -13,129 +16,200 @@ local UserInputService = game:GetService("UserInputService")
 local LP = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
--- UIリセット
-if CoreGui:FindFirstChild("Syu_ForceHub") then
-    CoreGui.Syu_ForceHub:Destroy()
+-- ================= UI RESET & SETUP =================
+if CoreGui:FindFirstChild("Syu_Complete_Hub") then
+    CoreGui.Syu_Complete_Hub:Destroy()
 end
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "Syu_ForceHub"
-pcall(function() ScreenGui.Parent = CoreGui end)
-if not ScreenGui.Parent then ScreenGui.Parent = LP:WaitForChild("PlayerGui") end
+ScreenGui.Name = "Syu_Complete_Hub"
+ScreenGui.ResetOnSpawn = false
 
--- メインフレーム
-local Main = Instance.new("Frame", ScreenGui)
-Main.Size = UDim2.new(0, 220, 0, 280) -- スマホ用に小さく
-Main.Position = UDim2.new(0.1, 0, 0.2, 0)
-Main.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-Main.Active = true
-Main.Draggable = true -- PC用だが一部モバイルでも有効
-Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 10)
-
--- タイトル
-local Title = Instance.new("TextLabel", Main)
-Title.Text = "Syu Hub: 強制移動版"
-Title.Size = UDim2.new(1, 0, 0, 30)
-Title.TextColor3 = Color3.new(1, 1, 1)
-Title.BackgroundTransparency = 1
-Title.Font = Enum.Font.GothamBold
-Title.TextSize = 14
-
--- 閉じるボタン
-local Close = Instance.new("TextButton", Main)
-Close.Size = UDim2.new(0, 30, 0, 30)
-Close.Position = UDim2.new(1, -30, 0, 0)
-Close.Text = "×"
-Close.TextColor3 = Color3.new(1,0,0)
-Close.BackgroundTransparency = 1
-Close.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
-
--- 開くボタン（最小化時）
-local OpenBtn = Instance.new("TextButton", ScreenGui)
-OpenBtn.Size = UDim2.new(0, 50, 0, 50)
-OpenBtn.Position = UDim2.new(0.9, -10, 0.4, 0)
-OpenBtn.Text = "Open"
-OpenBtn.BackgroundColor3 = Color3.fromRGB(30,30,30)
-OpenBtn.Visible = false
-Instance.new("UICorner", OpenBtn)
-
-Close.MouseButton1Click:Connect(function()
-    Main.Visible = false
-    OpenBtn.Visible = true
-end)
-OpenBtn.MouseButton1Click:Connect(function()
-    Main.Visible = true
-    OpenBtn.Visible = false
-end)
-
--- ================= 機能ロジック =================
-
-local Enabled = false
-local Speed = 1 -- 初期速度
-local Noclip = false
-
--- トグルボタン作成関数
-local function CreateToggle(text, yPos, callback)
-    local btn = Instance.new("TextButton", Main)
-    btn.Size = UDim2.new(0.9, 0, 0, 35)
-    btn.Position = UDim2.new(0.05, 0, 0, yPos)
-    btn.Text = text .. ": OFF"
-    btn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    btn.TextColor3 = Color3.new(1, 1, 1)
-    Instance.new("UICorner", btn)
-    
-    local on = false
-    btn.MouseButton1Click:Connect(function()
-        on = not on
-        btn.Text = text .. ": " .. (on and "ON" or "OFF")
-        btn.BackgroundColor3 = on and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(50, 50, 50)
-        callback(on)
-    end)
+-- Executor Safety Check
+if pcall(function() ScreenGui.Parent = CoreGui end) then
+    ScreenGui.Parent = CoreGui
+else
+    ScreenGui.Parent = LP:WaitForChild("PlayerGui")
 end
 
--- スライダー的なボタン（速度用）
-local SpeedLabel = Instance.new("TextLabel", Main)
-SpeedLabel.Size = UDim2.new(0.9, 0, 0, 20)
-SpeedLabel.Position = UDim2.new(0.05, 0, 0, 40)
-SpeedLabel.Text = "速度設定: " .. Speed
-SpeedLabel.TextColor3 = Color3.new(1,1,1)
-SpeedLabel.BackgroundTransparency = 1
+-- ================= MAIN UI FRAME =================
+local Main = Instance.new("Frame", ScreenGui)
+Main.Name = "MainFrame"
+Main.Size = UDim2.new(0, 500, 0, 320) -- Compact for Mobile
+Main.Position = UDim2.new(0.5, -250, 0.5, -160)
+Main.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+Main.BorderSizePixel = 0
+Main.Active = true
+Main.Visible = true
 
-local SpeedUp = Instance.new("TextButton", Main)
-SpeedUp.Size = UDim2.new(0.4, 0, 0, 30)
-SpeedUp.Position = UDim2.new(0.5, 5, 0, 65)
-SpeedUp.Text = "上げる (+)"
-SpeedUp.BackgroundColor3 = Color3.fromRGB(60,60,60)
-Instance.new("UICorner", SpeedUp)
-
-local SpeedDown = Instance.new("TextButton", Main)
-SpeedDown.Size = UDim2.new(0.4, 0, 0, 30)
-SpeedDown.Position = UDim2.new(0.1, -5, 0, 65)
-SpeedDown.Text = "下げる (-)"
-SpeedDown.BackgroundColor3 = Color3.fromRGB(60,60,60)
-Instance.new("UICorner", SpeedDown)
-
-SpeedUp.MouseButton1Click:Connect(function()
-    Speed = Speed + 0.5
-    SpeedLabel.Text = "速度設定: " .. Speed
+-- Mobile Draggable Logic
+local dragging, dragInput, dragStart, startPos
+Main.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = Main.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+Main.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        Main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
 end)
 
-SpeedDown.MouseButton1Click:Connect(function()
-    if Speed > 0.5 then Speed = Speed - 0.5 end
-    SpeedLabel.Text = "速度設定: " .. Speed
+Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 12)
+
+-- Title Bar
+local Title = Instance.new("TextLabel", Main)
+Title.Size = UDim2.new(1, -50, 0, 40)
+Title.Position = UDim2.new(0, 15, 0, 0)
+Title.Text = "Syu Hub | 完全版 (強制移動)"
+Title.TextColor3 = Color3.fromRGB(240, 240, 240)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 16
+Title.BackgroundTransparency = 1
+Title.XAlignment = Enum.TextXAlignment.Left
+
+-- Minimize Button
+local CloseBtn = Instance.new("TextButton", Main)
+CloseBtn.Size = UDim2.new(0, 40, 0, 40)
+CloseBtn.Position = UDim2.new(1, -40, 0, 0)
+CloseBtn.Text = "-"
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 24
+CloseBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+CloseBtn.BackgroundTransparency = 1
+CloseBtn.MouseButton1Click:Connect(function() Main.Visible = false end)
+
+-- Mobile Toggle Button (Right Side)
+local ToggleBtn = Instance.new("TextButton", ScreenGui)
+ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
+ToggleBtn.Position = UDim2.new(1, -60, 0.4, 0)
+ToggleBtn.Text = "Syu"
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+ToggleBtn.TextColor3 = Color3.new(1,1,1)
+Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 10)
+ToggleBtn.MouseButton1Click:Connect(function() Main.Visible = not Main.Visible end)
+
+-- ================= TAB SYSTEM =================
+local TabContainer = Instance.new("Frame", Main)
+TabContainer.Size = UDim2.new(0, 110, 1, -50)
+TabContainer.Position = UDim2.new(0, 10, 0, 45)
+TabContainer.BackgroundTransparency = 1
+
+local ContentContainer = Instance.new("Frame", Main)
+ContentContainer.Size = UDim2.new(1, -135, 1, -50)
+ContentContainer.Position = UDim2.new(0, 125, 0, 45)
+ContentContainer.BackgroundTransparency = 1
+
+local Tabs = {}
+local function CreateTab(name)
+    local btn = Instance.new("TextButton", TabContainer)
+    btn.Size = UDim2.new(1, 0, 0, 32)
+    btn.Position = UDim2.new(0, 0, 0, (#Tabs * 38))
+    btn.Text = name
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 13
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    
+    local page = Instance.new("ScrollingFrame", ContentContainer)
+    page.Size = UDim2.new(1, 0, 1, 0)
+    page.BackgroundTransparency = 1
+    page.Visible = false
+    page.ScrollBarThickness = 2
+    
+    btn.MouseButton1Click:Connect(function()
+        for _, t in pairs(Tabs) do t.Page.Visible = false end
+        page.Visible = true
+    end)
+    
+    table.insert(Tabs, {Btn = btn, Page = page})
+    return page
+end
+
+local TabMain = CreateTab("メイン")
+local TabMove = CreateTab("移動 (強)")
+local TabVis = CreateTab("表示")
+local TabSet = CreateTab("設定")
+
+Tabs[1].Page.Visible = true
+
+-- ================= WIDGET HELPER =================
+local function CreateBtn(parent, text, order, callback)
+    local b = Instance.new("TextButton", parent)
+    b.Size = UDim2.new(1, -10, 0, 35)
+    b.Position = UDim2.new(0, 5, 0, (order-1)*40)
+    b.Text = text
+    b.Font = Enum.Font.Gotham
+    b.TextColor3 = Color3.new(1,1,1)
+    b.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+    b.MouseButton1Click:Connect(callback)
+    return b
+end
+
+local function CreateToggleBtn(parent, text, order, callback)
+    local b = Instance.new("TextButton", parent)
+    b.Size = UDim2.new(1, -10, 0, 35)
+    b.Position = UDim2.new(0, 5, 0, (order-1)*40)
+    b.Text = text .. ": OFF"
+    b.Font = Enum.Font.Gotham
+    b.TextColor3 = Color3.new(1,1,1)
+    b.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+    
+    local on = false
+    b.MouseButton1Click:Connect(function()
+        on = not on
+        b.Text = text .. ": " .. (on and "ON" or "OFF")
+        b.BackgroundColor3 = on and Color3.fromRGB(0, 160, 60) or Color3.fromRGB(50, 50, 50)
+        callback(on)
+    end)
+    return b
+end
+
+-- ================= FEATURES =================
+
+-- [Main Tab]
+CreateBtn(TabMain, "UI完全削除", 1, function() ScreenGui:Destroy() end)
+CreateBtn(TabMain, "キャラクターリセット", 2, function() 
+    if LP.Character and LP.Character:FindFirstChild("Humanoid") then
+        LP.Character.Humanoid.Health = 0
+    end
 end)
 
--- === 強制移動処理 (CFrame Walk) ===
--- Humanoidの速度変更ではなく、入力検知して座標ごとズラす
-CreateToggle("強制移動 (CFrame)", 110, function(state)
-    Enabled = state
+-- [Movement Tab] - The Core Logic
+local CFrameWalk = false
+local WalkSpeed = 1.0
+local Noclip = false
+
+CreateToggleBtn(TabMove, "強制移動 (物理無視)", 1, function(state)
+    CFrameWalk = state
 end)
 
-CreateToggle("壁抜け (Noclip)", 155, function(state)
+CreateBtn(TabMove, "速度UP (+0.5)", 2, function()
+    WalkSpeed = WalkSpeed + 0.5
+end)
+CreateBtn(TabMove, "速度DOWN (-0.5)", 3, function()
+    if WalkSpeed > 0.5 then WalkSpeed = WalkSpeed - 0.5 end
+end)
+
+CreateToggleBtn(TabMove, "壁抜け (Noclip)", 4, function(state)
     Noclip = state
 end)
 
--- ループ処理
+-- Main Loop for Movement
 RunService.Heartbeat:Connect(function()
     local char = LP.Character
     if not char then return end
@@ -143,54 +217,70 @@ RunService.Heartbeat:Connect(function()
     local hrp = char:FindFirstChild("HumanoidRootPart")
     local hum = char:FindFirstChild("Humanoid")
     
-    -- 強制移動ロジック
-    if Enabled and hrp and hum then
-        -- 入力方向（スマホのジョイスティックもMoveDirectionに反映される）
+    -- CFrame Walk Logic
+    if CFrameWalk and hrp and hum then
         local moveDir = hum.MoveDirection
-        
-        -- 入力がある時だけ移動させる
         if moveDir.Magnitude > 0 then
-            -- 現在の位置 + (入力方向 * 速度)
-            -- CFrame操作なので物理演算の影響を受けにくい
-            hrp.CFrame = hrp.CFrame + (moveDir * Speed)
-            
-            -- ついでに本来の物理速度を殺して滑りを防止
-            hrp.Velocity = Vector3.new(0,0,0) 
+            hrp.CFrame = hrp.CFrame + (moveDir * WalkSpeed)
+            hrp.Velocity = Vector3.new(0,0,0) -- Cancel physics
         end
     end
     
-    -- 壁抜け処理
-    if Noclip and char then
-        for _, v in pairs(char:GetDescendants()) do
-            if v:IsA("BasePart") and v.CanCollide then
-                v.CanCollide = false
+    -- Noclip Logic
+    if Noclip then
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") and part.CanCollide then
+                part.CanCollide = false
             end
         end
     end
 end)
 
--- 診断ボタン（デバッグ用）
-local DebugBtn = Instance.new("TextButton", Main)
-DebugBtn.Size = UDim2.new(0.9, 0, 0, 30)
-DebugBtn.Position = UDim2.new(0.05, 0, 0, 240)
-DebugBtn.Text = "キャラ情報をコンソール出力"
-DebugBtn.BackgroundColor3 = Color3.fromRGB(100, 50, 0)
-Instance.new("UICorner", DebugBtn)
+-- [Visual Tab]
+local ESP_Enabled = false
+local ESP_Folder = Instance.new("Folder", ScreenGui)
 
-DebugBtn.MouseButton1Click:Connect(function()
-    print("--- DEBUG START ---")
-    if LP.Character then
-        print("Character found: " .. LP.Character.Name)
-        for _, v in pairs(LP.Character:GetChildren()) do
-            print("Child: " .. v.Name .. " (" .. v.ClassName .. ")")
+local function UpdateESP()
+    ESP_Folder:ClearAllChildren()
+    if not ESP_Enabled then return end
+    
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LP and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+            local hl = Instance.new("Highlight")
+            hl.Adornee = plr.Character
+            hl.Parent = ESP_Folder
+            hl.FillColor = Color3.fromRGB(255, 0, 0)
+            hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+            hl.FillTransparency = 0.5
         end
-    else
-        print("Character is NIL")
     end
-    print("--- DEBUG END ---")
-    DebugBtn.Text = "出力完了（F9で確認）"
-    task.wait(2)
-    DebugBtn.Text = "キャラ情報をコンソール出力"
+end
+
+CreateToggleBtn(TabVis, "プレイヤーESP", 1, function(state)
+    ESP_Enabled = state
+    UpdateESP()
 end)
 
-print("Syu Hub Force Move Loaded")
+task.spawn(function()
+    while task.wait(2) do
+        if ESP_Enabled then UpdateESP() end
+    end
+end)
+
+-- [Settings Tab]
+local Info = Instance.new("TextLabel", TabSet)
+Info.Size = UDim2.new(1, -10, 0, 100)
+Info.BackgroundTransparency = 1
+Info.Text = "Syu Hub\nForce Move Edition\n\n物理演算ゲーム専用\nMobile & PC Supported"
+Info.TextColor3 = Color3.new(1,1,1)
+Info.Font = Enum.Font.Gotham
+
+print("Syu Hub Loaded")
+'''
+
+# Save to file
+path = "/mnt/data/Syu_Complete_Hub_Force_Fixed.lua"
+with open(path, "w", encoding="utf-8") as f:
+    f.write(lua_content)
+
+path
